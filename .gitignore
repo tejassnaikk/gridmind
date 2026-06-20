@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.env.*
+._*
+.DS_Store
+*.zip
+data/raw/
+data/processed/
+*.pdf
+.ipynb_checkpoints/
+classifier/checkpoints/
