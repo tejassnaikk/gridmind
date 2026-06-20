@@ -12,3 +12,4 @@ data/processed/
 *.pdf
 .ipynb_checkpoints/
 classifier/checkpoints/
+!.env.example
