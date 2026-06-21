@@ -7,7 +7,7 @@ cited + version-aware + obligation-tagged answer out.
 - Single idempotent Python ingestion job. NO Step Functions, EventBridge, DynamoDB, Lambda fan-out.
 - Idempotency: SHA256 of source PDF stored in Postgres metadata; skip a doc if hash unchanged and status=complete.
 - Vector store: Postgres + pgvector. Keyword: Postgres full-text (ts_rank).
-- Embeddings: all-MiniLM-L6-v2 (384-dim). Benchmark one stronger model during the eval phase.
+- Embeddings: BAAI/bge-small-en-v1.5 (384-dim, 512-token window). Benchmark one stronger model during the eval phase.
 
 ## Retrieval (the differentiator — get this exactly right)
 Two independent retrievers, each returns a ranked list of chunk ids:
