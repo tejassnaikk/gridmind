@@ -34,6 +34,21 @@ def file_sha256(path: str) -> str:
     return h.hexdigest()
 
 
+def _normalize_to_standard(citation: str) -> str:
+    """
+    Collapse a full citation to its standard portion (family + number).
+      'CIP-013-2'   -> 'CIP-013'
+      'CIP-002-5.1' -> 'CIP-002'
+      'CIP-002'     -> 'CIP-002'
+
+    Heuristic: assumes FAMILY-NUMBER[-VERSION] layout. Regional IDs like
+    'BAL-002-WECC-2' would collapse incorrectly to 'BAL-002' and lose
+    'WECC' — revisit when ingesting regional or FERC docs.
+    """
+    parts = citation.split("-")
+    return "-".join(parts[:2]) if len(parts) >= 2 else citation
+
+
 def upsert_document(
     conn: psycopg.Connection,
     meta: dict,
@@ -126,8 +141,12 @@ def upsert_document(
                 next_id = chunk_ids[i + 1] if i < n - 1 else None
 
                 # Drop self-references; keep cross-document citations only.
+                # Normalize 'CIP-013-2' -> 'CIP-013' so the comparison against
+                # standard_id (which is bare) actually catches self-refs.
                 raw_refs = chunk.get("related_standards") or []
-                refs = [r for r in raw_refs if r != standard_id] or None
+                normalized = {_normalize_to_standard(r) for r in raw_refs}
+                normalized.discard(standard_id)
+                refs = sorted(normalized) or None
 
                 emb = chunk.get("embedding")
                 if emb is not None and not isinstance(emb, np.ndarray):
