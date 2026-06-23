@@ -31,6 +31,11 @@ from ingestion.upsert import file_sha256, upsert_document
 load_dotenv()
 
 # e.g. "CIP-013-2" -> family=CIP, number=013, version=2
+# TODO: Letter-suffixed minor revisions (e.g. CIP-002-5.1a, CIP-003-8b) are not
+# supported. The version column is INT in the schema, so accepting '5.1a' would
+# require a schema migration to TEXT plus updates to freshness-prior comparisons
+# and superseded_by linkage. For now, rename such files to the integer major
+# version (CIP-002-5.1a.pdf -> CIP-002-5.pdf) before ingestion.
 _FILENAME_RE = re.compile(r"^([A-Z]{2,3})-(\d{3})-(\d+)$", re.IGNORECASE)
 
 # "Title: Cyber Security - Supply Chain Risk Management"
