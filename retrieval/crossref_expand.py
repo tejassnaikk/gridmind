@@ -142,7 +142,11 @@ def _fetch_related_standards(
 # Public entry point
 # ---------------------------------------------------------------------------
 
-def query_with_expansion(question: str, k: int | None = None) -> list[dict]:
+def query_with_expansion(
+    question: str,
+    k: int | None = None,
+    conn: psycopg.Connection | None = None,
+) -> list[dict]:
     """
     Base pipeline + cross-reference expansion.
 
@@ -170,10 +174,12 @@ def query_with_expansion(question: str, k: int | None = None) -> list[dict]:
     # Step 1: embed the query once
     qvec = _embed_query(question)
 
-    database_url = os.environ["DATABASE_URL"]
-    with psycopg.connect(database_url) as conn:
+    # Steps 2–4: all DB work in one connection
+    _owned = conn is None
+    if _owned:
+        conn = psycopg.connect(os.environ["DATABASE_URL"])
         register_vector(conn)
-
+    try:
         # ------------------------------------------------------------------
         # Step 2: base retrieval (identical to retrieval.query.query)
         # ------------------------------------------------------------------
@@ -281,6 +287,10 @@ def query_with_expansion(question: str, k: int | None = None) -> list[dict]:
                     }
                 )
 
+    finally:
+        if _owned:
+            conn.close()
+
     # ----------------------------------------------------------------------
     # Step 5: merge, dedup (base beats xref for same chunk), sort, re-rank
     # ----------------------------------------------------------------------
@@ -299,6 +309,7 @@ def query_with_expansion(question: str, k: int | None = None) -> list[dict]:
         results.append(
             {
                 "rank": rank,
+                "_chunk_id": r["_chunk_id"],
                 "standard_id": r["standard_id"],
                 "version": r["version"],
                 "requirement_id": r["requirement_id"],

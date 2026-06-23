@@ -50,12 +50,20 @@ def _embed_query(question: str) -> np.ndarray:
     return vec.astype("float32")
 
 
-def query(question: str, k: int | None = None) -> list[dict]:
+def query(
+    question: str,
+    k: int | None = None,
+    conn: psycopg.Connection | None = None,
+) -> list[dict]:
     """
     End-to-end retrieval: embed query → dense + sparse → RRF fuse → priors → top-k.
 
     Returns a list of dicts with:
-        rank, standard_id, version, requirement_id, page_number, score, body.
+        rank, _chunk_id, standard_id, version, requirement_id, page_number, score, body.
+
+    If *conn* is provided it is used as-is; the caller must have already called
+    register_vector(conn).  If None, a connection is opened from DATABASE_URL,
+    register_vector is called on it, and it is closed on exit.
     """
     cfg = RETRIEVAL_CONFIG
     if k is not None:
@@ -66,16 +74,21 @@ def query(question: str, k: int | None = None) -> list[dict]:
     # Step 1: embed
     qvec = _embed_query(question)
 
-    # Steps 2–3: retrieve candidates
-    database_url = os.environ["DATABASE_URL"]
-    with psycopg.connect(database_url) as conn:
+    # Steps 2–4: retrieve candidates
+    _owned = conn is None
+    if _owned:
+        conn = psycopg.connect(os.environ["DATABASE_URL"])
         register_vector(conn)
+    try:
         dense_ids = dense_search(conn, qvec, pool)
         sparse_ids = sparse_search(conn, question, pool)
 
         # Step 4: fetch metadata for the union of both candidate sets
         all_ids = list(dict.fromkeys(dense_ids + sparse_ids))   # preserve order, dedup
         meta_by_id = fetch_chunk_meta(conn, all_ids)
+    finally:
+        if _owned:
+            conn.close()
 
     # Step 5: RRF fuse + priors → top-k
     ranked = rank_candidates(dense_ids, sparse_ids, meta_by_id, cfg)
@@ -87,6 +100,7 @@ def query(question: str, k: int | None = None) -> list[dict]:
         results.append(
             {
                 "rank": rank,
+                "_chunk_id": chunk_id,
                 "standard_id": m["standard_id"],
                 "version": m["version"],
                 "requirement_id": m["requirement_id"],
