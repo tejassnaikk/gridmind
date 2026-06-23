@@ -72,6 +72,15 @@ def _flush(
         chunks.append(
             {
                 "chunk_index": len(chunks),
+                # TODO: req_id over-propagates onto Interpretation Q&A and Guidelines
+                # chunks that merely DISCUSS a requirement. Three known cases:
+                #   3d00eccd (CIP-002 R1 RFI)
+                #   6c72c825 (CIP-002 R1 Background commentary)
+                #   585fd780 (CIP-002 R1 Q2 Answer)
+                # Fix: only set req_id when the chunk body opens with the requirement
+                # marker (^R\d+\.|^M\d+\.), not when the marker appears anywhere in body.
+                # Until fixed, downstream consumers (eval, classifier) must treat req_id
+                # as advisory, not authoritative. See classifier/labels/RULES.md Rule 1.
                 "requirement_id": req_id,
                 "body": body,
                 "page_number": start_page,
@@ -175,6 +184,15 @@ def _split_oversized(chunk: dict) -> list[dict]:
     return [
         {
             "chunk_index": 0,  # renumbered by caller
+            # TODO: req_id over-propagates onto Interpretation Q&A and Guidelines
+            # chunks that merely DISCUSS a requirement. Three known cases:
+            #   3d00eccd (CIP-002 R1 RFI)
+            #   6c72c825 (CIP-002 R1 Background commentary)
+            #   585fd780 (CIP-002 R1 Q2 Answer)
+            # Fix: only set req_id when the chunk body opens with the requirement
+            # marker (^R\d+\.|^M\d+\.), not when the marker appears anywhere in body.
+            # Until fixed, downstream consumers (eval, classifier) must treat req_id
+            # as advisory, not authoritative. See classifier/labels/RULES.md Rule 1.
             "requirement_id": req_id,
             "body": piece,
             "page_number": page,
