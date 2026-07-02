@@ -54,6 +54,8 @@ def query(
     question: str,
     k: int | None = None,
     conn: psycopg.Connection | None = None,
+    *,
+    prior_column: str = "obligation_strength",
 ) -> list[dict]:
     """
     End-to-end retrieval: embed query → dense + sparse → RRF fuse → priors → top-k.
@@ -64,6 +66,9 @@ def query(
     If *conn* is provided it is used as-is; the caller must have already called
     register_vector(conn).  If None, a connection is opened from DATABASE_URL,
     register_vector is called on it, and it is closed on exit.
+
+    prior_column is passed through to fetch_chunk_meta; see that function for
+    the allowlist and SQL-injection guard.
     """
     cfg = RETRIEVAL_CONFIG
     if k is not None:
@@ -85,7 +90,7 @@ def query(
 
         # Step 4: fetch metadata for the union of both candidate sets
         all_ids = list(dict.fromkeys(dense_ids + sparse_ids))   # preserve order, dedup
-        meta_by_id = fetch_chunk_meta(conn, all_ids)
+        meta_by_id = fetch_chunk_meta(conn, all_ids, prior_column=prior_column)
     finally:
         if _owned:
             conn.close()

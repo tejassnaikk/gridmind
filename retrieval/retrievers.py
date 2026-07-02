@@ -52,9 +52,14 @@ def sparse_search(
         return [row[0] for row in cur.fetchall()]
 
 
+_PRIOR_COLUMN_ALLOWLIST = {"obligation_strength", "obligation_strength_v2"}
+
+
 def fetch_chunk_meta(
     conn: psycopg.Connection,
     ids: list[str],
+    *,
+    prior_column: str = "obligation_strength",
 ) -> dict[str, dict]:
     """
     Return a mapping of chunk id -> metadata dict for every id in *ids*.
@@ -62,16 +67,26 @@ def fetch_chunk_meta(
     Joins standard_chunks to standard_document_metadata.
     is_current is True when the parent document has not been superseded
     (superseded_by IS NULL).
+
+    prior_column selects which obligation label column to read.  Allowed
+    values: 'obligation_strength' (default) or 'obligation_strength_v2'.
+    The column is always aliased to 'obligation_strength' in the result
+    dict so downstream code (scorer.py) is unaffected.
     """
+    if prior_column not in _PRIOR_COLUMN_ALLOWLIST:
+        raise ValueError(
+            f"prior_column {prior_column!r} is not in the allowlist "
+            f"{sorted(_PRIOR_COLUMN_ALLOWLIST)}"
+        )
     if not ids:
         return {}
     with conn.cursor() as cur:
         cur.execute(
-            """
+            f"""
             SELECT sc.id::text,
                    sc.body,
                    sc.requirement_id,
-                   sc.obligation_strength,
+                   sc.{prior_column} AS obligation_strength,
                    m.standard_id,
                    m.version,
                    sc.page_number,

@@ -2,11 +2,17 @@
 Retrieval strategy functions for GridMind eval.
 
 Each strategy shares the signature:
-    strategy(question: str, conn: psycopg.Connection, k: int) -> list[str]
+    strategy(question: str, conn: psycopg.Connection, k: int,
+             *, prior_column: str = "obligation_strength") -> list[str]
 
 Returning a list of chunk_ids (strings), top-k, in rank order.
 
-All five strategies are collected in STRATEGIES for the runner to iterate.
+prior_column is accepted by every strategy for signature uniformity.
+Strategies that do not apply priors (lexical_only, dense_only, rrf_hybrid)
+accept but ignore it.  Strategies that call query() or query_with_expansion()
+pass it through so the correct obligation column is used.
+
+All seven strategies are collected in STRATEGIES for the runner to iterate.
 """
 
 from __future__ import annotations
@@ -39,18 +45,27 @@ def _embed(question: str) -> np.ndarray:
 # Five strategies
 # ---------------------------------------------------------------------------
 
-def lexical_only(question: str, conn: psycopg.Connection, k: int) -> list[str]:
+def lexical_only(
+    question: str, conn: psycopg.Connection, k: int,
+    *, prior_column: str = "obligation_strength",
+) -> list[str]:
     """Lexical ts_rank retrieval only. No fusion, no priors."""
     return sparse_search(conn, question, k)
 
 
-def dense_only(question: str, conn: psycopg.Connection, k: int) -> list[str]:
+def dense_only(
+    question: str, conn: psycopg.Connection, k: int,
+    *, prior_column: str = "obligation_strength",
+) -> list[str]:
     """Dense cosine retrieval only. No fusion, no priors."""
     qvec = _embed(question)
     return dense_search(conn, qvec, k)
 
 
-def rrf_hybrid(question: str, conn: psycopg.Connection, k: int) -> list[str]:
+def rrf_hybrid(
+    question: str, conn: psycopg.Connection, k: int,
+    *, prior_column: str = "obligation_strength",
+) -> list[str]:
     """
     RRF fusion of dense + lexical. No priors applied.
 
@@ -67,15 +82,39 @@ def rrf_hybrid(question: str, conn: psycopg.Connection, k: int) -> list[str]:
     return sorted_ids[:k]
 
 
-def rrf_priors(question: str, conn: psycopg.Connection, k: int) -> list[str]:
+def rrf_priors(
+    question: str, conn: psycopg.Connection, k: int,
+    *, prior_column: str = "obligation_strength",
+) -> list[str]:
     """RRF + freshness × obligation priors. Production base strategy."""
-    results = query(question, k=k, conn=conn)
+    results = query(question, k=k, conn=conn, prior_column=prior_column)
     return [r["_chunk_id"] for r in results]
 
 
-def rrf_priors_crossref(question: str, conn: psycopg.Connection, k: int) -> list[str]:
+def rrf_priors_crossref(
+    question: str, conn: psycopg.Connection, k: int,
+    *, prior_column: str = "obligation_strength",
+) -> list[str]:
     """RRF + priors + cross-reference expansion. Production expansion strategy."""
-    results = query_with_expansion(question, k=k, conn=conn)
+    results = query_with_expansion(question, k=k, conn=conn, prior_column=prior_column)
+    return [r["_chunk_id"] for r in results]
+
+
+def rrf_priors_v2(
+    question: str, conn: psycopg.Connection, k: int,
+    *, prior_column: str = "obligation_strength",
+) -> list[str]:
+    """RRF + freshness × obligation priors using the v2 (LogReg-derived) column."""
+    results = query(question, k=k, conn=conn, prior_column="obligation_strength_v2")
+    return [r["_chunk_id"] for r in results]
+
+
+def rrf_priors_crossref_v2(
+    question: str, conn: psycopg.Connection, k: int,
+    *, prior_column: str = "obligation_strength",
+) -> list[str]:
+    """RRF + priors + cross-reference expansion using the v2 (LogReg-derived) column."""
+    results = query_with_expansion(question, k=k, conn=conn, prior_column="obligation_strength_v2")
     return [r["_chunk_id"] for r in results]
 
 
@@ -84,9 +123,11 @@ def rrf_priors_crossref(question: str, conn: psycopg.Connection, k: int) -> list
 # ---------------------------------------------------------------------------
 
 STRATEGIES: dict[str, callable] = {
-    "lexical":              lexical_only,
-    "dense":                dense_only,
-    "rrf":                  rrf_hybrid,
-    "rrf+priors":           rrf_priors,
-    "rrf+priors+crossref":  rrf_priors_crossref,
+    "lexical":                  lexical_only,
+    "dense":                    dense_only,
+    "rrf":                      rrf_hybrid,
+    "rrf+priors":               rrf_priors,
+    "rrf+priors+crossref":      rrf_priors_crossref,
+    "rrf+priors_v2":            rrf_priors_v2,
+    "rrf+priors+crossref_v2":   rrf_priors_crossref_v2,
 }

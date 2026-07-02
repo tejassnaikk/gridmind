@@ -146,12 +146,18 @@ def query_with_expansion(
     question: str,
     k: int | None = None,
     conn: psycopg.Connection | None = None,
+    *,
+    prior_column: str = "obligation_strength",
 ) -> list[dict]:
     """
     Base pipeline + cross-reference expansion.
 
     Same return shape as retrieval.query.query() with one extra key per dict:
       'from_crossref' (bool) — True if this chunk was surfaced via expansion.
+
+    prior_column is passed through to every fetch_chunk_meta call (both the
+    base retrieval and the per-standard xref sub-queries) so that the same
+    obligation label column is used throughout a single pipeline run.
 
     Behavior notes (verified via instrumented runs):
       - Cross-references are collected from the FULL base candidate pool
@@ -188,7 +194,7 @@ def query_with_expansion(
         sparse_ids = sparse_search(conn, question, pool)
 
         all_base_ids = list(dict.fromkeys(dense_ids + sparse_ids))
-        meta_by_id = fetch_chunk_meta(conn, all_base_ids)
+        meta_by_id = fetch_chunk_meta(conn, all_base_ids, prior_column=prior_column)
 
         ranked_base = rank_candidates(dense_ids, sparse_ids, meta_by_id, base_cfg)
 
@@ -256,7 +262,7 @@ def query_with_expansion(
                 continue
 
             xref_candidate_ids = list(dict.fromkeys(d_ids + s_ids))
-            xref_meta = fetch_chunk_meta(conn, xref_candidate_ids)
+            xref_meta = fetch_chunk_meta(conn, xref_candidate_ids, prior_column=prior_column)
 
             fused = rrf_fuse(d_ids, s_ids, cfg)
 
